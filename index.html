@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>欢乐24点 - 高清始终可见版</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- 引入 Lucide 图标 -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&display=swap');
+
+        :root {
+            --primary: #ff6b6b;
+            --secondary: #4ecdc4;
+            --accent: #ffe66d;
+        }
+
+        body {
+            background: #f0f9ff;
+            background-image: radial-gradient(#d1e9ff 2.5px, transparent 2.5px);
+            background-size: 40px 40px;
+            height: 100vh;
+            overflow: hidden;
+            font-family: 'Segoe UI', "Microsoft YaHei", "PingFang SC", sans-serif;
+            color: #333;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .main-container {
+            width: 96vw;
+            height: 92vh;
+            display: grid;
+            grid-template-columns: 350px 1fr; 
+            gap: 24px;
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            height: 100%;
+        }
+
+        /* 扑克牌超高清重制 - 始终保持清晰 */
+        .poker-card {
+            perspective: 1000px;
+            width: 120px;
+            height: 165px;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            cursor: pointer;
+        }
+
+        .poker-card-inner {
+            width: 100%;
+            height: 100%;
+            background: #fff;
+            border-radius: 20px;
+            box-shadow: 
+                inset 0 0 0 1px rgba(0,0,0,0.05),
+                0 10px 0px #e2e8f0,
+                0 15px 25px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 12px;
+            color: #1a1a1a;
+            border: 5px solid #fff;
+            position: relative;
+        }
+
+        .card-corner { font-weight: 900; font-size: 24px; line-height: 0.9; }
+        .card-center { 
+            font-size: 56px; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            flex-grow: 1;
+            filter: drop-shadow(2px 2px 0 rgba(0,0,0,0.1));
+        }
+        .corner-bottom { transform: rotate(180deg); }
+
+        /* 被选中或正在答题时的跳起效果 */
+        .poker-card.selected { transform: translateY(-25px) scale(1.05); z-index: 10; }
+        .poker-card.selected .poker-card-inner { 
+            border-color: #ffe66d; 
+            background: #fffef0;
+            box-shadow: 0 15px 0px #fde047, 0 20px 30px rgba(0,0,0,0.15);
+        }
+
+        .kids-panel {
+            background: white;
+            border-radius: 30px;
+            border: 6px solid #e0f2fe;
+            box-shadow: 0 12px 0px #e0f2fe;
+        }
+
+        /* 仅锁定输入和操作区，不再锁定整个面板以保持扑克清晰 */
+        .input-locked { filter: grayscale(0.8) opacity(0.5); pointer-events: none; }
+        
+        /* 针对抢答区的锁定样式 */
+        .area-locked { filter: grayscale(0.8) opacity(0.4); pointer-events: none; }
+
+        .btn-bubbly { 
+            transition: all 0.1s ease-out; 
+            box-shadow: 0 6px 0px rgba(0,0,0,0.1); 
+        }
+        .btn-bubbly:active { transform: translateY(4px); box-shadow: 0 2px 0px rgba(0,0,0,0.1); }
+
+        #historyList::-webkit-scrollbar, #playerRoster::-webkit-scrollbar { width: 8px; }
+        #historyList::-webkit-scrollbar-thumb, #playerRoster::-webkit-scrollbar-thumb { background: #bfdbfe; border-radius: 10px; }
+    </style>
+</head>
+<body class="p-6">
+
+    <div class="main-container">
+        
+        <!-- 左侧栏：榜单与抢答 -->
+        <aside class="sidebar">
+            <div class="kids-panel p-5 h-[280px] flex flex-col">
+                <h3 class="font-black text-pink-500 text-xl mb-2 flex items-center gap-2">
+                    <i data-lucide="trophy" class="w-6 h-6 fill-pink-200"></i> 小英雄榜
+                </h3>
+                <div class="flex-1 min-h-0">
+                    <canvas id="scoreChart"></canvas>
+                </div>
+            </div>
+
+            <div id="selectorArea" class="bg-yellow-50 rounded-[35px] p-6 border-4 border-dashed border-yellow-200 flex-1 flex flex-col min-h-0">
+                <h3 class="text-center text-yellow-700 font-black mb-4 text-xl flex items-center justify-center gap-2">
+                    <i data-lucide="party-popper" class="w-6 h-6"></i> 谁想出来啦？点名字！
+                </h3>
+                <div id="playerRoster" class="flex-1 overflow-y-auto pr-2 flex flex-col gap-3"></div>
+            </div>
+        </aside>
+
+        <!-- 右侧：核心游戏区 -->
+        <main class="flex flex-col gap-6">
+            <header class="flex justify-between items-center px-6">
+                <h1 class="text-4xl font-black text-blue-600 flex items-center gap-3">
+                    <i data-lucide="sparkles" class="text-yellow-400 fill-yellow-400 w-10 h-10"></i>
+                    欢乐24点
+                </h1>
+                <div class="flex gap-6">
+                    <button id="hintBtn" class="text-blue-500 hover:text-blue-700 font-black flex items-center gap-2 text-lg">
+                        <i data-lucide="lightbulb" class="w-6 h-6"></i> 提示
+                    </button>
+                    <button id="dealBtn" class="bg-orange-500 text-white px-8 py-2 rounded-2xl font-black flex items-center gap-2 text-xl btn-bubbly shadow-[0_6px_0_#c2410c]">
+                        <i data-lucide="refresh-cw" class="w-6 h-6"></i> 换一组
+                    </button>
+                </div>
+            </header>
+
+            <div id="gameConsole" class="kids-panel p-10 flex-1 relative flex flex-col justify-between">
+                <!-- 状态标签 -->
+                <div id="currentPlayerTag" class="absolute -top-6 left-10 bg-slate-400 text-white px-8 py-2 rounded-2xl text-xl font-black shadow-lg z-20">
+                    准备抢答！
+                </div>
+
+                <!-- 扑克展示区：不再受 area-locked 影响，始终清晰 -->
+                <div id="cardContainer" class="flex justify-center gap-10 py-4"></div>
+
+                <!-- 操作区：抢答前会被锁定，但扑克牌不会 -->
+                <div id="interactiveArea" class="input-locked flex flex-col gap-6">
+                    <div id="expression-box" class="text-7xl font-black text-center py-8 px-6 bg-slate-50 rounded-[30px] border-4 border-dashed border-slate-200 flex items-center justify-center text-slate-300 min-h-[140px] transition-all">
+                        点名字抢答！
+                    </div>
+                    
+                    <div id="result-message" class="text-center font-black text-3xl min-h-[40px] py-2"></div>
+
+                    <div class="flex gap-6">
+                        <div class="grid grid-cols-4 gap-4 flex-1">
+                            <button class="op-btn btn-bubbly p-4 bg-blue-100 text-blue-600 rounded-2xl font-black text-4xl hover:bg-blue-200" data-val="+">+</button>
+                            <button class="op-btn btn-bubbly p-4 bg-blue-100 text-blue-600 rounded-2xl font-black text-4xl hover:bg-blue-200" data-val="-">-</button>
+                            <button class="op-btn btn-bubbly p-4 bg-blue-100 text-blue-600 rounded-2xl font-black text-4xl hover:bg-blue-200" data-val="×">×</button>
+                            <button class="op-btn btn-bubbly p-4 bg-blue-100 text-blue-600 rounded-2xl font-black text-4xl hover:bg-blue-200" data-val="÷">÷</button>
+                            <button class="op-btn btn-bubbly p-4 bg-purple-100 text-purple-600 rounded-2xl font-black text-4xl hover:bg-purple-200" data-val="(">(</button>
+                            <button class="op-btn btn-bubbly p-4 bg-purple-100 text-purple-600 rounded-2xl font-black text-4xl hover:bg-purple-200" data-val=")">)</button>
+                            <button id="backspaceBtn" class="btn-bubbly p-4 bg-red-100 text-red-500 rounded-2xl flex items-center justify-center gap-3 hover:bg-red-200 col-span-2 font-black text-2xl">
+                                <i data-lucide="delete" class="w-8 h-8"></i> 删掉
+                            </button>
+                        </div>
+
+                        <div class="flex flex-col gap-4 w-64">
+                            <button id="calcBtn" class="btn-bubbly flex-1 bg-green-500 text-white rounded-2xl font-black text-3xl shadow-[0_8px_0_#15803d] hover:bg-green-400">好啦！</button>
+                            <button id="cancelTurnBtn" class="p-3 bg-slate-200 text-slate-500 rounded-2xl font-black hover:bg-slate-300 text-lg">换人</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 底部记录 -->
+            <div class="grid grid-cols-2 gap-6 h-36">
+                <div class="kids-panel p-4 bg-blue-50 overflow-hidden flex flex-col">
+                    <h3 class="font-black text-blue-700 text-sm flex items-center gap-2 mb-2">
+                        <i data-lucide="scroll-text" class="w-4 h-4"></i> 成功记录
+                    </h3>
+                    <div id="historyList" class="flex-1 overflow-y-auto space-y-1 text-md">
+                        <p class="text-blue-300 italic text-center py-2">还没有记录哦</p>
+                    </div>
+                </div>
+                <div id="solutionsArea" class="hidden kids-panel p-4 bg-yellow-50 overflow-hidden flex flex-col border-yellow-100">
+                    <h3 class="font-black text-yellow-700 text-sm flex items-center gap-2 mb-2">
+                        <i data-lucide="help-circle" class="w-4 h-4"></i> 偷偷看答案
+                    </h3>
+                    <ul id="solutionsList" class="flex-1 overflow-y-auto text-lg columns-2 font-mono font-bold text-yellow-800"></ul>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 入场弹窗 -->
+    <div id="setupModal" class="fixed inset-0 bg-blue-600/50 backdrop-blur-xl z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-[50px] p-10 max-w-lg w-full shadow-2xl border-[12px] border-white">
+            <h2 class="text-4xl font-black text-blue-600 mb-4 text-center">选手集合啦！</h2>
+            <div class="flex flex-col gap-6 mb-8">
+                <div class="flex gap-4">
+                    <input type="text" id="singlePlayerInput" class="flex-1 px-6 py-5 bg-slate-100 rounded-3xl focus:ring-8 focus:ring-blue-100 outline-none font-black text-2xl" placeholder="输入选手姓名">
+                    <button id="addPlayerBtn" class="px-8 bg-blue-500 text-white rounded-3xl font-black text-xl hover:bg-blue-600 btn-bubbly">添加</button>
+                </div>
+                <div id="addedPlayersList" class="flex flex-wrap gap-3 min-h-[80px] p-5 bg-slate-50 rounded-[30px] border-4 border-dashed border-slate-200"></div>
+            </div>
+            <button id="finishSetupBtn" class="w-full py-6 bg-orange-500 text-white rounded-[30px] font-black text-3xl shadow-[0_10px_0_#c2410c] disabled:opacity-30" disabled>
+                全部准备好啦！
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let currentCards = [];
+        let expression = [];
+        let players = [];
+        let scores = {};
+        let activePlayer = null;
+        let chartInstance = null;
+
+        const SUITS = ['♠', '♥', '♣', '♦'];
+        const SUIT_COLORS = ['#333', '#ef4444', '#10b981', '#f59e0b']; // 调整黑桃颜色为更深的灰色/黑色
+
+        document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+            loadProgress();
+            
+            document.getElementById('addPlayerBtn').onclick = addPlayer;
+            document.getElementById('singlePlayerInput').onkeypress = (e) => { if(e.key === 'Enter') addPlayer(); };
+            document.getElementById('finishSetupBtn').onclick = finishSetup;
+            document.getElementById('dealBtn').onclick = dealCards;
+            document.getElementById('calcBtn').onclick = validateResult;
+            document.getElementById('backspaceBtn').onclick = backspace;
+            document.getElementById('cancelTurnBtn').onclick = resetTurn;
+            document.getElementById('hintBtn').onclick = () => {
+                const area = document.getElementById('solutionsArea');
+                area.classList.toggle('hidden');
+                if(!area.classList.contains('hidden')) renderSolutions();
+            };
+
+            document.querySelectorAll('.op-btn').forEach(btn => {
+                btn.onclick = () => {
+                    expression.push({type: 'op', val: btn.dataset.val});
+                    updateUI();
+                };
+            });
+        });
+
+        function loadProgress() {
+            const savedPlayers = localStorage.getItem('kids24_players_v5');
+            const savedScores = localStorage.getItem('kids24_scores_v5');
+            if (savedPlayers) {
+                players = JSON.parse(savedPlayers);
+                renderAddedPlayers();
+                if (savedScores) scores = JSON.parse(savedScores);
+                document.getElementById('finishSetupBtn').disabled = players.length === 0;
+            }
+        }
+
+        function addPlayer() {
+            const input = document.getElementById('singlePlayerInput');
+            const name = input.value.trim();
+            if (!name || players.includes(name)) return;
+            players.push(name);
+            if (!scores[name]) scores[name] = 0;
+            input.value = '';
+            renderAddedPlayers();
+            document.getElementById('finishSetupBtn').disabled = false;
+        }
+
+        function renderAddedPlayers() {
+            const container = document.getElementById('addedPlayersList');
+            container.innerHTML = players.length === 0 ? '<span class="text-slate-400 italic text-lg">添加选手名字...</span>' : '';
+            players.forEach((p, idx) => {
+                const tag = document.createElement('span');
+                tag.className = "px-4 py-2 bg-white text-blue-600 rounded-xl text-lg font-black flex items-center gap-2 border-2 border-blue-100 shadow-sm";
+                tag.innerHTML = `${p} <button onclick="removePlayer(${idx})"><i data-lucide="circle-x" class="w-5 h-5 text-red-400"></i></button>`;
+                container.appendChild(tag);
+            });
+            lucide.createIcons();
+        }
+
+        window.removePlayer = (idx) => { players.splice(idx, 1); renderAddedPlayers(); document.getElementById('finishSetupBtn').disabled = players.length === 0; };
+
+        function finishSetup() {
+            localStorage.setItem('kids24_players_v5', JSON.stringify(players));
+            localStorage.setItem('kids24_scores_v5', JSON.stringify(scores));
+            document.getElementById('setupModal').classList.add('hidden');
+            updateChart();
+            renderPlayerRoster();
+            dealCards();
+        }
+
+        function renderPlayerRoster() {
+            const container = document.getElementById('playerRoster');
+            container.innerHTML = '';
+            players.forEach(name => {
+                const btn = document.createElement('button');
+                btn.className = "w-full py-4 bg-white border-4 border-blue-50 hover:bg-blue-600 hover:text-white hover:border-blue-500 rounded-2xl font-black transition-all text-xl btn-bubbly text-blue-600 truncate px-4";
+                btn.textContent = name;
+                btn.onclick = () => selectPlayer(name);
+                container.appendChild(btn);
+            });
+        }
+
+        function selectPlayer(name) {
+            activePlayer = name;
+            document.getElementById('interactiveArea').classList.remove('input-locked');
+            document.getElementById('selectorArea').classList.add('area-locked');
+            document.getElementById('currentPlayerTag').textContent = `${name} 挑战中!`;
+            document.getElementById('currentPlayerTag').className = "absolute -top-6 left-10 bg-pink-500 text-white px-8 py-2 rounded-2xl text-xl font-black shadow-lg z-20 animate-bounce";
+            expression = [];
+            currentCards.forEach(c => c.used = false);
+            document.getElementById('result-message').textContent = '';
+            updateUI();
+        }
+
+        function resetTurn() {
+            activePlayer = null;
+            document.getElementById('interactiveArea').classList.add('input-locked');
+            document.getElementById('selectorArea').classList.remove('area-locked');
+            document.getElementById('currentPlayerTag').textContent = `准备抢答！`;
+            document.getElementById('currentPlayerTag').className = "absolute -top-6 left-10 bg-slate-400 text-white px-8 py-2 rounded-2xl text-xl font-black shadow-lg z-20";
+            expression = [];
+            currentCards.forEach(c => c.used = false);
+            updateUI();
+        }
+
+        function dealCards() {
+            let found = false;
+            let newNums = [];
+            while (!found) {
+                newNums = Array.from({length: 4}, () => Math.floor(Math.random() * 10) + 1);
+                if (solve24(newNums).length > 0) found = true;
+            }
+            currentCards = newNums.map((v, i) => ({ id: `k-c-${Date.now()}-${i}`, val: v, suit: Math.floor(Math.random() * 4), used: false }));
+            resetTurn();
+            renderCards();
+            document.getElementById('solutionsArea').classList.add('hidden');
+        }
+
+        function renderCards() {
+            const container = document.getElementById('cardContainer');
+            container.innerHTML = '';
+            currentCards.forEach(card => {
+                const div = document.createElement('div');
+                div.className = `poker-card ${card.used ? 'selected' : ''}`;
+                const displayNum = card.val === 1 ? 'A' : card.val;
+                div.innerHTML = `
+                    <div class="poker-card-inner">
+                        <div class="card-corner" style="color:${SUIT_COLORS[card.suit]}">${displayNum}</div>
+                        <div class="card-center" style="color:${SUIT_COLORS[card.suit]}">${SUITS[card.suit]}</div>
+                        <div class="card-corner corner-bottom" style="color:${SUIT_COLORS[card.suit]}">${displayNum}</div>
+                    </div>
+                `;
+                div.onclick = () => {
+                    if (!activePlayer) return;
+                    if (card.used) {
+                        const idx = expression.findLastIndex(e => e.id === card.id);
+                        if (idx !== -1) expression.splice(idx, 1);
+                        card.used = false;
+                    } else {
+                        expression.push({type: 'num', val: card.val, id: card.id});
+                        card.used = true;
+                    }
+                    updateUI();
+                };
+                container.appendChild(div);
+            });
+        }
+
+        function updateUI() {
+            const box = document.getElementById('expression-box');
+            if (expression.length === 0) {
+                box.textContent = activePlayer ? '快组合出24！' : '点名字抢答';
+                box.classList.add('text-slate-300');
+                box.classList.remove('text-blue-600');
+                box.style.fontSize = '2.5rem';
+            } else {
+                box.textContent = expression.map(e => e.val).join(' ');
+                box.classList.remove('text-slate-300');
+                box.classList.add('text-blue-600');
+                box.style.fontSize = '4.5rem';
+            }
+            renderCards();
+        }
+
+        function backspace() {
+            const last = expression.pop();
+            if (last && last.type === 'num') {
+                const card = currentCards.find(c => c.id === last.id);
+                if (card) card.used = false;
+            }
+            updateUI();
+        }
+
+        function validateResult() {
+            const msg = document.getElementById('result-message');
+            const usedNums = expression.filter(e => e.type === 'num');
+            if (usedNums.length < 4) {
+                msg.textContent = '要用完 4 张牌哦！';
+                msg.className = 'text-center font-black text-orange-500 animate-pulse text-2xl';
+                return;
+            }
+            const str = expression.map(e => e.val).join('').replace(/×/g, '*').replace(/÷/g, '/');
+            try {
+                const result = eval(str);
+                if (Math.abs(result - 24) < 1e-6) {
+                    msg.textContent = '🌟 正确！太棒了！';
+                    msg.className = 'text-center font-black text-green-500 text-4xl';
+                    scores[activePlayer]++;
+                    saveAndRefresh(activePlayer, expression.map(e => e.val).join(' '));
+                } else {
+                    msg.textContent = `等于 ${Math.round(result*100)/100}，不对哦~`;
+                    msg.className = 'text-center font-black text-red-500 text-2xl';
+                }
+            } catch (e) { 
+                msg.textContent = '算式好像有点问题？'; 
+                msg.className = 'text-center font-black text-red-400 text-2xl'; 
+            }
+        }
+
+        function saveAndRefresh(name, exp) {
+            localStorage.setItem('kids24_scores_v5', JSON.stringify(scores));
+            const history = document.getElementById('historyList');
+            if (history.querySelector('p')) history.innerHTML = '';
+            const item = document.createElement('div');
+            item.className = "text-md bg-white px-4 py-1 rounded-xl border-2 border-green-100 flex justify-between shadow-sm font-bold text-blue-900";
+            item.innerHTML = `<span><b>${name}</b>: ${exp} = 24</span> <span class="text-yellow-500">🏆</span>`;
+            history.prepend(item);
+            updateChart();
+            setTimeout(dealCards, 2000);
+        }
+
+        function updateChart() {
+            const ctx = document.getElementById('scoreChart').getContext('2d');
+            const data = { 
+                labels: Object.keys(scores), 
+                datasets: [{ 
+                    data: Object.values(scores), 
+                    backgroundColor: ['#ff6b6b', '#4ecdc4', '#ffe66d', '#6366f1', '#f59e0b'], 
+                    borderRadius: 10,
+                }] 
+            };
+            if (chartInstance) { 
+                chartInstance.data = data; 
+                chartInstance.update(); 
+            } else { 
+                chartInstance = new Chart(ctx, { 
+                    type: 'bar', 
+                    data: data, 
+                    options: { 
+                        maintainAspectRatio: false, 
+                        indexAxis: 'y',
+                        plugins: { legend: { display: false } },
+                        scales: { 
+                            x: { beginAtZero: true, ticks: { stepSize: 1, font: { weight: 'bold' } } }, 
+                            y: { grid: { display: false }, ticks: { font: { weight: 'bold', size: 14 } } } 
+                        } 
+                    } 
+                }); 
+            }
+        }
+
+        function solve24(nums) {
+            const res = new Set();
+            const ops = ['+', '-', '*', '/'];
+            function bt(a, e) {
+                if (a.length === 1) { if (Math.abs(a[0] - 24) < 1e-6) res.add(e[0]); return; }
+                for (let i = 0; i < a.length; i++) {
+                    for (let j = 0; j < a.length; j++) {
+                        if (i === j) continue;
+                        const nA = []; const nE = [];
+                        for (let k = 0; k < a.length; k++) if (k!==i && k!==j) { nA.push(a[k]); nE.push(e[k]); }
+                        for (let op of ops) {
+                            if (op === '/' && Math.abs(a[j]) < 1e-6) continue;
+                            let val = op==='+'?a[i]+a[j]:op==='-'?a[i]-a[j]:op==='*'?a[i]*a[j]:a[i]/a[j];
+                            nA.push(val); nE.push(`(${e[i]}${op}${e[j]})`);
+                            bt(nA, nE); nA.pop(); nE.pop();
+                        }
+                    }
+                }
+            }
+            bt(nums, nums.map(String));
+            return Array.from(res).map(s => s.replace(/\*/g, '×').replace(/\//g, '÷').slice(1, -1));
+        }
+
+        function renderSolutions() {
+            const list = document.getElementById('solutionsList');
+            const solutions = solve24(currentCards.map(c => c.val));
+            list.innerHTML = solutions.length ? solutions.map(s => `<li>${s}</li>`).join('') : '<li>这题无解哦</li>';
+        }
+    </script>
+</body>
+</html>
